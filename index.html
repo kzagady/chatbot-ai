@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <title>Twój Chatbot AI</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #1c1c1c, #2a2a2a);
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+
+    .phone-frame {
+      background-color: #2b2b2b;
+      width: 500px;
+      height: 850px;
+      border-radius: 35px;
+      box-shadow: 0 0 25px rgba(0, 0, 0, 0.6);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .chat-header {
+      background-color: #3b3b3b;
+      padding: 10px;
+      color: white;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .chat-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .chat-item {
+      background: #444;
+      color: white;
+      padding: 6px 10px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+
+    .chat-item span {
+      font-size: 14px;
+    }
+
+    .chat-item button {
+      background: transparent;
+      border: none;
+      color: #ccc;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    #chat {
+      flex: 1;
+      overflow-y: auto;
+      padding: 15px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .message {
+      max-width: 75%;
+      padding: 12px 18px;
+      border-radius: 20px;
+      word-wrap: break-word;
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    .user {
+      background-color: #007aff;
+      color: white;
+      align-self: flex-end;
+      border-bottom-right-radius: 6px;
+    }
+
+    .ai {
+      background-color: #e5e5ea;
+      color: black;
+      align-self: flex-start;
+      border-bottom-left-radius: 6px;
+    }
+
+    .input-area {
+      display: flex;
+      padding: 15px;
+      border-top: 1px solid #444;
+      background-color: #3b3b3b;
+    }
+
+    #input {
+      flex: 1;
+      padding: 12px;
+      font-size: 15px;
+      border: none;
+      border-radius: 20px;
+      outline: none;
+    }
+
+    #sendBtn {
+      margin-left: 10px;
+      padding: 12px 20px;
+      background-color: #007aff;
+      color: white;
+      border: none;
+      border-radius: 20px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    .typing {
+      font-style: italic;
+      font-size: 14px;
+      color: #aaa;
+      margin-top: -5px;
+      margin-left: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="phone-frame">
+    <div class="chat-header">
+      <div class="chat-list" id="chatList"></div>
+      <button onclick="startNewChat()">+ Nowa rozmowa</button>
+    </div>
+
+    <div id="chat"></div>
+    <div id="typingIndicator" class="typing" style="display: none;">AI pisze...</div>
+    <div class="input-area">
+      <input type="text" id="input" placeholder="Napisz wiadomość...">
+      <button id="sendBtn" onclick="send()">➔</button>
+    </div>
+  </div>
+
+  <audio id="msgSound" src="https://assets.mixkit.co/sfx/preview/mixkit-message-pop-alert-2354.mp3" preload="auto"></audio>
+
+  <script>
+    let currentChatId = null;
+
+    window.addEventListener("DOMContentLoaded", async () => {
+      await loadChatList();
+      const savedId = localStorage.getItem("chat_id");
+      if (savedId) {
+        currentChatId = savedId;
+        await loadHistory(savedId);
+      }
+    });
+
+    async function loadChatList() {
+      const res = await fetch("http://127.0.0.1:8000/chats");
+      const chats = await res.json();
+      const chatList = document.getElementById("chatList");
+      chatList.innerHTML = "";
+
+      chats.forEach(chat => {
+        const div = document.createElement("div");
+        div.className = "chat-item";
+
+        const title = document.createElement("span");
+        title.textContent = chat.title;
+        title.onclick = async () => {
+          currentChatId = chat.chat_id;
+          localStorage.setItem("chat_id", currentChatId);
+          clearChat();
+          await loadHistory(currentChatId);
+        };
+
+        const edit = document.createElement("button");
+        edit.textContent = "✏";
+        edit.onclick = async (e) => {
+          e.stopPropagation();
+          const newTitle = prompt("Nowy tytuł rozmowy:", chat.title);
+          if (newTitle) {
+            await fetch("http://127.0.0.1:8000/rename-chat", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ chat_id: chat.chat_id, title: newTitle })
+            });
+            await loadChatList();
+          }
+        };
+
+        const del = document.createElement("button");
+        del.textContent = "🗑";
+        del.onclick = async (e) => {
+          e.stopPropagation();
+          if (confirm("Usunąć tę rozmowę?")) {
+            await fetch(`http://127.0.0.1:8000/delete-chat/${chat.chat_id}`, {
+              method: "DELETE"
+            });
+            if (chat.chat_id === currentChatId) {
+              currentChatId = null;
+              localStorage.removeItem("chat_id");
+              clearChat();
+            }
+            await loadChatList();
+          }
+        };
+
+        div.appendChild(title);
+        div.appendChild(edit);
+        div.appendChild(del);
+        chatList.appendChild(div);
+      });
+    }
+
+    async function startNewChat() {
+      const res = await fetch("http://127.0.0.1:8000/new-chat", { method: "POST" });
+      const data = await res.json();
+      currentChatId = data.chat_id;
+      localStorage.setItem("chat_id", currentChatId);
+      await loadChatList();
+      clearChat();
+    }
+
+    async function send() {
+      const input = document.getElementById("input");
+      const message = input.value.trim();
+      if (!message || !currentChatId) return;
+
+      addMessage(message, "user");
+      document.getElementById("typingIndicator").style.display = "block";
+
+      try {
+        const response = await fetch("http://127.0.0.1:8000/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message, chat_id: currentChatId })
+        });
+
+        const data = await response.json();
+        addMessage(data.reply, "ai");
+      } catch (error) {
+        addMessage("Błąd: " + error.message, "ai");
+      } finally {
+        document.getElementById("typingIndicator").style.display = "none";
+        input.value = "";
+      }
+    }
+
+    function addMessage(text, sender) {
+      const chat = document.getElementById("chat");
+      const msg = document.createElement("div");
+      msg.className = `message ${sender}`;
+      msg.textContent = text;
+      chat.appendChild(msg);
+      chat.scrollTop = chat.scrollHeight;
+      if (sender === "ai") {
+        document.getElementById("msgSound").play();
+      }
+    }
+
+    async function loadHistory(chatId) {
+      const res = await fetch(`http://127.0.0.1:8000/load-chat/${chatId}`);
+      const messages = await res.json();
+      messages.forEach(msg => {
+        if (msg.role === "user") addMessage(msg.content, "user");
+        if (msg.role === "assistant") addMessage(msg.content, "ai");
+      });
+    }
+
+    function clearChat() {
+      document.getElementById("chat").innerHTML = "";
+    }
+
+    document.getElementById("input").addEventListener("keypress", function(e) {
+      if (e.key === "Enter") send();
+    });
+  </script>
+</body>
+</html>
