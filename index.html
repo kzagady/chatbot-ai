@@ -150,8 +150,15 @@
   <audio id="msgSound" src="https://assets.mixkit.co/sfx/preview/mixkit-message-pop-alert-2354.mp3" preload="auto"></audio>
 
   <script>
-    let currentChatId = null;
     const API_URL = "https://chatbot-ai-fbne.onrender.com";
+    let currentChatId = null;
+
+    // 🆔 Generuj user_id, jeśli nie istnieje
+    let userId = localStorage.getItem("user_id");
+    if (!userId) {
+      userId = "u" + Math.random().toString(36).substring(2, 10);
+      localStorage.setItem("user_id", userId);
+    }
 
     window.addEventListener("DOMContentLoaded", async () => {
       await loadChatList();
@@ -163,7 +170,7 @@
     });
 
     async function loadChatList() {
-      const res = await fetch(`${API_URL}/chats`);
+      const res = await fetch(`${API_URL}/chats?user_id=${userId}`);
       const chats = await res.json();
       const chatList = document.getElementById("chatList");
       chatList.innerHTML = "";
@@ -190,7 +197,7 @@
             await fetch(`${API_URL}/rename-chat`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ chat_id: chat.chat_id, title: newTitle })
+              body: JSON.stringify({ chat_id: chat.chat_id, title: newTitle, user_id: userId })
             });
             await loadChatList();
           }
@@ -201,7 +208,7 @@
         del.onclick = async (e) => {
           e.stopPropagation();
           if (confirm("Usunąć tę rozmowę?")) {
-            await fetch(`${API_URL}/delete-chat/${chat.chat_id}`, {
+            await fetch(`${API_URL}/delete-chat/${chat.chat_id}?user_id=${userId}`, {
               method: "DELETE"
             });
             if (chat.chat_id === currentChatId) {
@@ -221,7 +228,11 @@
     }
 
     async function startNewChat() {
-      const res = await fetch(`${API_URL}/new-chat`, { method: "POST" });
+      const res = await fetch(`${API_URL}/new-chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userId })
+      });
       const data = await res.json();
       currentChatId = data.chat_id;
       localStorage.setItem("chat_id", currentChatId);
@@ -241,7 +252,7 @@
         const response = await fetch(`${API_URL}/chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message, chat_id: currentChatId })
+          body: JSON.stringify({ message, chat_id: currentChatId, user_id: userId })
         });
 
         const data = await response.json();
@@ -267,7 +278,7 @@
     }
 
     async function loadHistory(chatId) {
-      const res = await fetch(`${API_URL}/load-chat/${chatId}`);
+      const res = await fetch(`${API_URL}/load-chat/${chatId}?user_id=${userId}`);
       const messages = await res.json();
       messages.forEach(msg => {
         if (msg.role === "user") addMessage(msg.content, "user");
