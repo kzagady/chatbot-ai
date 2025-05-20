@@ -1,18 +1,18 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from openai import OpenAI
-from dotenv import load_dotenv
 import os
 import json
 import uuid
 from datetime import datetime
 
-load_dotenv()
+# OpenAI klient
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 app = FastAPI()
 
+# Zezwól na wszystkie połączenia (np. z index.html)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -23,7 +23,7 @@ app.add_middleware(
 CHATS_DIR = "chats"
 os.makedirs(CHATS_DIR, exist_ok=True)
 
-# ========= POMOCNICZE ==========
+# ======= FUNKCJE POMOCNICZE =======
 
 def chat_file_path(chat_id):
     return os.path.join(CHATS_DIR, f"{chat_id}.json")
@@ -39,7 +39,7 @@ def save_chat(chat_id, history):
     with open(chat_file_path(chat_id), "w", encoding="utf-8") as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
 
-# ========= ENDPOINTY ==========
+# ======= ENDPOINTY API =======
 
 @app.post("/new-chat")
 def new_chat():
@@ -87,7 +87,7 @@ async def chat(request: Request):
         return {"error": "Brakuje chat_id"}
 
     history = load_chat(chat_id)
-    history = [m for m in history if "role" in m]  # pomiń meta
+    history = [m for m in history if "role" in m]
 
     history.append({"role": "user", "content": user_message})
 
@@ -99,10 +99,10 @@ async def chat(request: Request):
     reply = response.choices[0].message.content
     history.append({"role": "assistant", "content": reply})
 
-    # przywróć meta (jeśli była)
+    # Przywróć metadane
     full_history = load_chat(chat_id)
-    base = [m for m in full_history if "meta" in m]
-    save_chat(chat_id, base + history)
+    meta = [m for m in full_history if "meta" in m]
+    save_chat(chat_id, meta + history)
 
     return {"reply": reply}
 
@@ -121,7 +121,6 @@ def rename_chat(data: dict):
     with open(path, "r", encoding="utf-8") as f:
         content = json.load(f)
 
-    # Szukamy meta i aktualizujemy tytuł
     for item in content:
         if "meta" in item:
             item["meta"]["title"] = new_title
@@ -136,3 +135,9 @@ def delete_chat(chat_id: str):
         os.remove(path)
         return JSONResponse(content={"success": True, "deleted": chat_id})
     return JSONResponse(content={"error": "Rozmowa nie istnieje"}, status_code=404)
+
+# ======= STRONA STARTOWA (index.html) =======
+
+@app.get("/")
+def serve_index():
+    return FileResponse("index.html")
